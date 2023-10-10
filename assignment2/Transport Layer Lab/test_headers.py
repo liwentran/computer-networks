@@ -15,7 +15,7 @@ class TestHeaders(unittest.TestCase):
 
         actual_value = (hdr.length, hdr.ttl, hdr.protocol,
                 hdr.checksum, hdr.src, hdr.dst)
-        correct_value = (0, 0, 0, 0, '0.0.0.0', '0.0.0.0')
+        correct_value = (517, 128, 6, 0, '192.168.10.20', '192.168.15.2')
 
         self.assertEqual(actual_value, correct_value)
 
@@ -24,7 +24,7 @@ class TestHeaders(unittest.TestCase):
 
 
         actual_value = binascii.hexlify(ip_hdr_obj.to_bytes())
-        correct_value = b''
+        correct_value = b'45000421000000004011000080bb52fe80aa333f'
 
         self.assertEqual(actual_value, correct_value)
 
@@ -33,7 +33,6 @@ class TestHeaders(unittest.TestCase):
         udp_hdr_bytes = b'\x04+\x1ej\x07\xe5\x00\x00'
 
         hdr = UDPHeader.from_bytes(udp_hdr_bytes)
-
         actual_value = (hdr.sport, hdr.dport, hdr.length, hdr.checksum)
         correct_value = (1067, 7786, 2021, 0)
 
@@ -51,12 +50,11 @@ class TestHeaders(unittest.TestCase):
     def test_tcp_header(self):
         tcp_hdr_bytes = b'\xffC\xd5\xd3\x00\xa4DV\x00\x82\\,P\x10\x00@\x00\x00\x00\x00'
 
-
         hdr = TCPHeader.from_bytes(tcp_hdr_bytes)
 
         actual_value = (hdr.sport, hdr.dport, hdr.seq,
                 hdr.ack, hdr.flags, hdr.checksum)
-        correct_value = (0, 0, 0, 0, 0, 0)
+        correct_value = (65347, 54739, 10765398, 8543276, 16, 0)
 
         self.assertEqual(actual_value, correct_value)
 
@@ -64,7 +62,7 @@ class TestHeaders(unittest.TestCase):
         tcp_hdr_obj = TCPHeader(1123, 2025, 876539, 452850, TCP_FLAGS_SYN | TCP_FLAGS_ACK, 0)
 
         actual_value = binascii.hexlify(tcp_hdr_obj.to_bytes())
-        correct_value = b''
+        correct_value = b'046307e9000d5ffb0006e8f25012004000000000'
 
         self.assertEqual(actual_value, correct_value)
 
