@@ -113,6 +113,7 @@ class TCPSocketBase:
         pass
 
 class TCPListenerSocket(TCPSocketBase):
+    """Handles packets that are for new TCP connection requests. Instantiates new TCPSocket with each request."""
     def __init__(self, local_addr: str, local_port: int,
             handle_new_client_func: callable, send_ip_packet_func: callable,
             notify_on_data_func: callable) -> TCPListenerSocket:
@@ -128,6 +129,11 @@ class TCPListenerSocket(TCPSocketBase):
 
 
     def handle_packet(self, pkt: bytes) -> None:
+        """
+        On new TCP connection request, instantiate new TCPSocket with a tuple
+        that uniquely maps to its own TCPSocket instance and has state of LISTEN.
+        Then, call handle_packet() on that newly created socket.
+        """
         ip_hdr = IPv4Header.from_bytes(pkt[:IP_HEADER_LEN])
         tcp_hdr = TCPHeader.from_bytes(pkt[IP_HEADER_LEN:TCPIP_HEADER_LEN])
         data = pkt[TCPIP_HEADER_LEN:]
@@ -194,6 +200,7 @@ class TCPSocket(TCPSocketBase):
         data = pkt[TCPIP_HEADER_LEN:]
 
         if self.state != TCP_STATE_ESTABLISHED:
+            # establish 3 way handshake
             self.continue_connection(pkt)
 
         if self.state == TCP_STATE_ESTABLISHED:
@@ -210,18 +217,70 @@ class TCPSocket(TCPSocketBase):
 
 
     def initiate_connection(self) -> None:
-        pass
+        """Initiate the TCP heandshake."""
+        # send TCP packet with SYN flag set
+        self.send_packet(
+            seq=self.base_seq_self, 
+            ack=0, # SYN packets don't have an acknolwedgement number
+            flags= TCP_FLAGS_SYN,
+            data=b'',
+        )
+
+        # transition state to SYN_SENT
+        self.state=TCP_STATE_SYN_SENT
 
     def handle_syn(self, pkt: bytes) -> None:
-        pass
+        """Handle SYN packet"""
+        tcp_header = TCPHeader.from_bytes(pkt[IP_HEADER_LEN:TCPIP_HEADER_LEN])
+        
+        # ignore the packet if flag is not SYN
+        if (tcp_header.flags & TCP_FLAGS_SYN) == TCP_FLAGS_SYN:
+            # save base sequence of remote side
+            self.base_seq_other = tcp_header.seq
+            # send corresponding SYNACK packet
+            self.send_packet(
+                seq=self.base_seq_self, 
+                ack=self.base_seq_other + 1,
+                flags= TCP_FLAGS_SYN | TCP_FLAGS_ACK,
+                data=pkt[TCPIP_HEADER_LEN:],
+            )
+
+            # transition state
+            self.state = TCP_STATE_SYN_RECEIVED
 
     def handle_synack(self, pkt: bytes) -> None:
-        pass
+        """Handle TCP SYNACK packet"""
+
+        tcp_header = TCPHeader.from_bytes(pkt[IP_HEADER_LEN:TCPIP_HEADER_LEN])
+        synack_flag = TCP_FLAGS_SYN | TCP_FLAGS_ACK
+        
+        # ignore packet if flag is not SYNACK or the ack field is not our current sequence
+        if (tcp_header.flags & synack_flag) == synack_flag and tcp_header.ack == self.base_seq_self + 1:
+            # save base sequence of remote side
+            self.base_seq_other = tcp_header.seq
+
+            # send corresponding ACK packet
+            self.send_packet(
+                seq=self.base_seq_self + 1, 
+                ack=self.base_seq_other + 1,
+                flags= TCP_FLAGS_ACK,
+                data=pkt[TCPIP_HEADER_LEN:],
+            )
+
+            # transition state
+            self.state = TCP_STATE_ESTABLISHED
 
     def handle_ack_after_synack(self, pkt: bytes) -> None:
-        pass
+        """Handle incoming TCP ACK packet."""
+        tcp_header = TCPHeader.from_bytes(pkt[IP_HEADER_LEN:TCPIP_HEADER_LEN])
+        
+        # ignore the packet if not ACK flag or if ack field is not our sequence number
+        if (tcp_header.flags & TCP_FLAGS_ACK) == TCP_FLAGS_ACK and tcp_header.ack == self.base_seq_self+1:
+            self.state = TCP_STATE_ESTABLISHED
+
 
     def continue_connection(self, pkt: bytes) -> None:
+        """Handle the connection states"""
         if self.state == TCP_STATE_LISTEN:
             self.handle_syn(pkt)
         elif self.state == TCP_STATE_SYN_SENT:
@@ -235,11 +294,42 @@ class TCPSocket(TCPSocketBase):
     @classmethod
     def create_packet(cls, src: str, sport: int, dst: str, dport: int,
             seq: int, ack: int, flags: int, data: bytes=b'') -> bytes:
-        return b''
+        """Creates a TCP packet as a byte instance."""
+        ip_header = IPv4Header(
+            length=(TCPIP_HEADER_LEN+len(data)), 
+            ttl=IPV4_TTL_DEFAULT, 
+            protocol=IPPROTO_TCP, 
+            checksum=0, 
+            src=src, 
+            dst=dst
+        )
+
+        tcp_header = TCPHeader(
+            sport=sport, 
+            dport=dport, 
+            seq=seq,
+            ack=ack,
+            flags=flags,
+            checksum=0
+        )
+
+        return ip_header.to_bytes() + tcp_header.to_bytes() + data
 
     def send_packet(self, seq: int, ack: int, flags: int,
             data: bytes=b'') -> None:
-        pass
+        """Creates and sends a TCP packet"""
+        self._send_ip_packet(
+            self.create_packet(
+                src=self._local_addr,
+                sport=self._local_port,
+                dst=self._remote_addr,
+                dport=self._remote_port,
+                seq=seq,
+                ack=ack,
+                flags=flags,
+                data=data,
+            )
+        )
 
     def handle_data(self, pkt: bytes) -> None:
         pass

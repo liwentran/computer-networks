@@ -15,7 +15,21 @@ class TransportHost(Host):
         self.socket_mapping_tcp = {}
 
     def handle_tcp(self, pkt: bytes) -> None:
-        pass
+        """Called by handle_ip() when packet is dtermined to be a TCP packet."""
+        # look for open TCP socket corresponding with the 4-tuple of the incoming packet
+        src_address = ip_binary_to_str(pkt[12:16])
+        dst_address = ip_binary_to_str(pkt[16:20])
+        sport, = struct.unpack('!H', pkt[IP_HEADER_LEN:IP_HEADER_LEN+2])
+        dport, = struct.unpack('!H', pkt[IP_HEADER_LEN+2:IP_HEADER_LEN+4])
+
+        if socket := self.socket_mapping_tcp.get((dst_address, dport, src_address, sport)):
+            # if 4-tuple mapping is found, call handle_packet() on socket
+            socket.handle_packet(pkt)
+        elif listener_socket := self.socket_mapping_tcp.get((dst_address, dport, None, None)):
+            # look for maping with the local address+port, and call handle_packet() on TCPListenerSocket
+            listener_socket.handle_packet(pkt)
+        else:
+            self.no_socket_tcp(pkt)
 
     def handle_udp(self, pkt: bytes) -> None:
         """
