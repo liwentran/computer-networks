@@ -9,6 +9,7 @@ from cougarnet.util import \
 IP_HEADER_LEN = 20
 UDP_HEADER_LEN = 8
 TCP_HEADER_LEN = 20
+ICMP_HEADER_LEN = 8
 TCPIP_HEADER_LEN = IP_HEADER_LEN + TCP_HEADER_LEN
 UDPIP_HEADER_LEN = IP_HEADER_LEN + UDP_HEADER_LEN
 
@@ -188,4 +189,52 @@ class TCPHeader:
         hdr += struct.pack('!H', self.checksum) 
         hdr += struct.pack('!H', 0) 
 
+        return hdr
+
+
+class ICMPHeader:
+    """
+    Represets an ICMP header used for sending error and reset messages.
+    
+    Attr:
+        type : int
+            message type (1 byte)
+        code : int
+            message type code (1 byte)
+        checksum : int
+            ICMP header checksum (2 byte)
+    """
+
+    def __init__(self, type: int, code: int, checksum: int) -> ICMPHeader:
+        self.type = type
+        self.code = code
+        self.checksum = checksum
+
+    def __repr__(self) -> str:
+        return f'ICMPHeader(type={self.type}, code={self.code}, checksum={self.checksum})'
+
+    def __str__(self) -> str:
+        return repr(self)
+    
+    @classmethod
+    def from_bytes(cls, hdr: bytes) -> ICMPHeader:  
+        """
+        Initialize a ICMPHeader from raw byte instance
+        """
+        type, = struct.unpack('!B', hdr[0:1])
+        code, = struct.unpack('!B', hdr[1:2])
+        checksum, = struct.unpack('!H', hdr[2:4])
+
+        return cls(type, code, checksum)
+
+    def to_bytes(self) -> bytes:
+        """
+        Return bytes of this ICMPHeader instance with some defaults. 
+        """
+        hdr = b''
+        hdr += struct.pack('!B', self.type) 
+        hdr += struct.pack('!B', self.code)
+        hdr += struct.pack('!H', self.checksum) 
+        hdr += struct.pack('!I', 0) # Unused
+        
         return hdr

@@ -1,11 +1,13 @@
 from cougarnet.util import \
         ip_str_to_binary, ip_binary_to_str
 import struct
-from headers import IPv4Header, UDPHeader, TCPHeader, \
+from headers import ICMP_HEADER_LEN, IPv4Header, UDPHeader, TCPHeader, ICMPHeader, \
         IP_HEADER_LEN, UDP_HEADER_LEN, TCP_HEADER_LEN, \
         TCPIP_HEADER_LEN, UDPIP_HEADER_LEN
-from host import Host
-from mysocket import UDPSocket, TCPSocketBase
+from host import IPPROTO_TCP, Host
+from mysocket import IPV4_TTL_DEFAULT, TCP_FLAGS_RST, UDPSocket, TCPSocketBase
+
+IPPROTO_ICMP = 1 # Internet Control Message Protocol
 
 class TransportHost(Host):
     def __init__(self, *args, **kwargs):
@@ -49,8 +51,6 @@ class TransportHost(Host):
             self.no_socket_udp(pkt)
 
 
-                
-
     def install_socket_udp(self, local_addr: str, local_port: int,
             sock: UDPSocket) -> None:
         self.socket_mapping_udp[(local_addr, local_port)] = sock
@@ -65,7 +65,36 @@ class TransportHost(Host):
                 remote_addr, remote_port)] = sock
 
     def no_socket_udp(self, pkt: bytes) -> None:
-        pass
+        """Return an ICMP Port Unreachable message to the sender"""
+        # create a new IPv4 header using the pkt's src and dst
+        pkt_ipv4_header = IPv4Header.from_bytes(pkt[:IP_HEADER_LEN])
+        ipv4_header=  IPv4Header(
+            length=IP_HEADER_LEN+ICMP_HEADER_LEN+len(pkt), # IP + ICMP + pkt
+            ttl=IPV4_TTL_DEFAULT, 
+            protocol=IPPROTO_ICMP, 
+            checksum=0, 
+            src=pkt_ipv4_header.dst,  # swap dst and src
+            dst=pkt_ipv4_header.src
+        )
+        icmp_packet = ICMPHeader(type=3, code=3, checksum=0)
+        self.send_packet(ipv4_header.to_bytes() + icmp_packet.to_bytes() + pkt)
 
     def no_socket_tcp(self, pkt: bytes) -> None:
-        pass
+        """Send TCP packet with only the RST flag set."""
+        # create a new IPv4 header using the pkt's src and dst
+        pkt_ipv4_header = IPv4Header.from_bytes(pkt[:IP_HEADER_LEN])
+        ipv4_header=  IPv4Header(
+            length=TCPIP_HEADER_LEN+len(pkt), # IP + TCP + pkt
+            ttl=IPV4_TTL_DEFAULT, 
+            protocol=IPPROTO_TCP, 
+            checksum=pkt_ipv4_header.checksum, 
+            src=pkt_ipv4_header.dst,  # swap dst and src
+            dst=pkt_ipv4_header.src
+        )
+
+        # get pkt's tcp, swap the ports, and change flag to RST
+        tcp_hdr = TCPHeader.from_bytes(pkt[IP_HEADER_LEN:TCPIP_HEADER_LEN])
+        tcp_hdr.sport, tcp_hdr.dport = tcp_hdr.dport, tcp_hdr.sport
+        tcp_hdr.flags = TCP_FLAGS_RST
+        
+        self.send_packet(ipv4_header.to_bytes() + tcp_hdr.to_bytes() + pkt)

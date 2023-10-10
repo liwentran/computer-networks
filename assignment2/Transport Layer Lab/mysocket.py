@@ -138,18 +138,21 @@ class TCPListenerSocket(TCPSocketBase):
         tcp_hdr = TCPHeader.from_bytes(pkt[IP_HEADER_LEN:TCPIP_HEADER_LEN])
         data = pkt[TCPIP_HEADER_LEN:]
 
+        sock = TCPSocket(self._local_addr, self._local_port,
+                ip_hdr.src, tcp_hdr.sport,
+                TCP_STATE_LISTEN,
+                send_ip_packet_func=self._send_ip_packet_func,
+                notify_on_data_func=self._notify_on_data_func)
         if tcp_hdr.flags & TCP_FLAGS_SYN:
-            sock = TCPSocket(self._local_addr, self._local_port,
-                    ip_hdr.src, tcp_hdr.sport,
-                    TCP_STATE_LISTEN,
-                    send_ip_packet_func=self._send_ip_packet_func,
-                    notify_on_data_func=self._notify_on_data_func)
-
             self._handle_new_client(self._local_addr, self._local_port,
                     ip_hdr.src, tcp_hdr.sport, sock)
 
             sock.handle_packet(pkt)
-
+        else:
+            # when a TCP packet reaches a socket in the LISTEN state,
+            # but the packet does not have the SYN flag set, 
+            # return a TCP packet with only the RST flag set.
+            sock.send_reset_packet(pkt)
 
 class TCPSocket(TCPSocketBase):
     def __init__(self, local_addr: str, local_port: int,
@@ -233,7 +236,6 @@ class TCPSocket(TCPSocketBase):
         """Handle SYN packet"""
         tcp_header = TCPHeader.from_bytes(pkt[IP_HEADER_LEN:TCPIP_HEADER_LEN])
         
-        # ignore the packet if flag is not SYN
         if (tcp_header.flags & TCP_FLAGS_SYN) == TCP_FLAGS_SYN:
             # save base sequence of remote side
             self.base_seq_other = tcp_header.seq
@@ -247,6 +249,9 @@ class TCPSocket(TCPSocketBase):
 
             # transition state
             self.state = TCP_STATE_SYN_RECEIVED
+        else:
+            # if flag is not SYN, return a TCP packet with only the RST flag set
+            self.send_reset_packet(pkt)
 
     def handle_synack(self, pkt: bytes) -> None:
         """Handle TCP SYNACK packet"""
@@ -329,6 +334,15 @@ class TCPSocket(TCPSocketBase):
                 flags=flags,
                 data=data,
             )
+        )
+
+    def send_reset_packet(self, pkt: bytes) -> None:
+        """Creates and sends a reset TCP packet"""
+        self.send_packet(
+            seq=self.base_seq_self,
+            ack=0, # no data has been acknolwedged
+            flags= TCP_FLAGS_RST,
+            data=pkt[TCPIP_HEADER_LEN:],
         )
 
     def handle_data(self, pkt: bytes) -> None:

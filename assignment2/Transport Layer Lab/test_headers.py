@@ -1,7 +1,7 @@
 import binascii
 import unittest
 
-from headers import IPv4Header, UDPHeader, TCPHeader
+from headers import IPv4Header, UDPHeader, TCPHeader, ICMPHeader
 
 from mysocket import TCP_FLAGS_SYN, TCP_FLAGS_ACK, \
         IPPROTO_TCP, IPPROTO_UDP
@@ -64,6 +64,21 @@ class TestHeaders(unittest.TestCase):
         actual_value = binascii.hexlify(tcp_hdr_obj.to_bytes())
         correct_value = b'046307e9000d5ffb0006e8f25012004000000000'
 
+        self.assertEqual(actual_value, correct_value)
+
+    def test_icmp_header(self):
+        icmp_header_bytes = b'\x15\x02\x00\x00\x00\x00\x00\x00'
+
+        hdr = ICMPHeader.from_bytes(icmp_header_bytes)
+        actual_value = (hdr.type, hdr.code, hdr.checksum)
+        correct_value = (21, 2, 0)
+        
+        self.assertEqual(actual_value, correct_value)
+        
+        icmp_hdr_obj = ICMPHeader(5, 12, 0)
+
+        actual_value = binascii.hexlify(icmp_hdr_obj.to_bytes())
+        correct_value = b'050c000000000000'
         self.assertEqual(actual_value, correct_value)
 
 if __name__ == '__main__':
