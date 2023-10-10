@@ -1,6 +1,6 @@
 from cougarnet.util import \
         ip_str_to_binary, ip_binary_to_str
-
+import struct
 from headers import IPv4Header, UDPHeader, TCPHeader, \
         IP_HEADER_LEN, UDP_HEADER_LEN, TCP_HEADER_LEN, \
         TCPIP_HEADER_LEN, UDPIP_HEADER_LEN
@@ -18,7 +18,24 @@ class TransportHost(Host):
         pass
 
     def handle_udp(self, pkt: bytes) -> None:
-        pass
+        """
+        Look for an open UDP socket corresponding to its destination address 
+        and destination port of the incoming packet, and handle that packet if
+        it exists.
+        """
+        # find destination address and destination port
+        dst_address = ip_binary_to_str(pkt[16:20])
+        dport, = struct.unpack('!H', pkt[IP_HEADER_LEN+2:IP_HEADER_LEN+4])
+                
+        if socket := self.socket_mapping_udp.get((dst_address, dport)):
+            # open UDP socket corresponding to the dst address and port of the incoming packet exists
+            socket.handle_packet(pkt)
+        else:
+            # no mapping found
+            self.no_socket_udp(pkt)
+
+
+                
 
     def install_socket_udp(self, local_addr: str, local_port: int,
             sock: UDPSocket) -> None:

@@ -27,35 +27,84 @@ from headers import IPv4Header, UDPHeader, TCPHeader, \
 IPPROTO_TCP = 6 # Transmission Control Protocol
 IPPROTO_UDP = 17 # User Datagram Protocol
 
+IPV4_TTL_DEFAULT = 64 # as instructed
+
+
+
 class UDPSocket:
+    """
+    A socket that has its address and port bind to it
+    """
     def __init__(self, local_addr: str, local_port: int,
             send_ip_packet_func: callable,
             notify_on_data_func: callable) -> UDPSocket:
 
         self._local_addr = local_addr
         self._local_port = local_port
-        self._send_ip_packet = send_ip_packet_func
-        self._notify_on_data = notify_on_data_func
+        # sends an IP datagram out of one of its host's interface
+        self._send_ip_packet = send_ip_packet_func 
+        # let's the application know there is data
+        self._notify_on_data = notify_on_data_func 
 
         self.buffer = []
 
     def handle_packet(self, pkt: bytes) -> None:
-        self.buffer.append((b'', '0.0.0.0', 0))
+        """
+        Parses a packet, appends the data to the buffer with the remote 
+        IP address and port it came from, and notifies the application that 
+        there's data to be read.
+        """
+        # parse the packet
+        ipv4_header = IPv4Header.from_bytes(pkt[:IP_HEADER_LEN])
+        udp_header = UDPHeader.from_bytes(pkt[IP_HEADER_LEN:UDPIP_HEADER_LEN])
+        data = pkt[UDPIP_HEADER_LEN:]
+
+        # (data, address, port) address and port should be where it came from
+        self.buffer.append((data, ipv4_header.src, udp_header.sport))
         self._notify_on_data()
 
     @classmethod
     def create_packet(cls, src: str, sport: int, dst: str, dport: int,
             data: bytes=b'') -> bytes:
-        pass
+        """Creates a UDP datagram packet as a byte instance."""
+        ip_header = IPv4Header(
+            length=(UDPIP_HEADER_LEN+len(data)), 
+            ttl=IPV4_TTL_DEFAULT, 
+            protocol=IPPROTO_UDP, 
+            checksum=0, 
+            src=src, 
+            dst=dst
+        )
+
+        udp_header = UDPHeader(
+            sport=sport, 
+            dport=dport, 
+            length=UDP_HEADER_LEN+len(data), 
+            checksum=0
+        )
+        return ip_header.to_bytes() + udp_header.to_bytes() + data
 
     def send_packet(self, remote_addr: str, remote_port: int,
             data: bytes) -> None:
-        pass
+        """Creates and sends a UDP datagram"""
+        self._send_ip_packet(
+            self.create_packet(
+                src=self._local_addr, 
+                sport=self._local_port, 
+                dst=remote_addr, 
+                dport=remote_port, 
+                data=data)
+        )
 
     def recvfrom(self) -> tuple[bytes, str, int]:
+        """
+        Called by the application to receieve data. Returns the
+        contents of the earliest recieved UDP datagram that has not been read
+        """
         return self.buffer.pop(0)
 
     def sendto(self, data: bytes, remote_addr: str, remote_port: int) -> None:
+        """Called by the application to send data."""
         self.send_packet(remote_addr, remote_port, data)
 
 
