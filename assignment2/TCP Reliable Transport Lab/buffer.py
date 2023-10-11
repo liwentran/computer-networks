@@ -103,7 +103,77 @@ class TCPReceiveBuffer(object):
         self.base_seq = seq
 
     def put(self, data: bytes, sequence: int) -> None:
-        pass
+        """
+        Add data to the buffer. Maps the incoming segment of data by sequence number.
+
+        Args:
+            `data` : bytes
+                the raw bytes that have been received in a TCP
+            `sequence`: int
+                the sequence number associated with the first byte of the data
+        """
+        # ignore old data
+        if sequence + len(data) <= self.base_seq:
+            return
+        
+        # ignore partial old data
+        if sequence < self.base_seq:
+            data = data[self.base_seq-sequence:]
+            sequence = self.base_seq
+
+        # if sequence already exists 
+        if (segment := self.buffer.get(sequence)):
+            # keep only the longest segment
+            self.buffer[sequence] = segment if len(segment) > len(data) else data
+        else:
+            # insert data into buffer
+            self.buffer[sequence] = data
+
+        # trim overlaps
+        prev_seq_end = -1
+        for cur_seq_start in sorted(self.buffer.keys()):
+            if cur_seq_start < prev_seq_end:
+                # when overlap, trim the beginning of the segment
+                overlapping_segment = self.buffer.pop(cur_seq_start)
+                trimmed_segment = overlapping_segment[prev_seq_end-cur_seq_start:]
+
+                # add trimmed segment
+                if existing_segment := self.buffer.get(prev_seq_end): 
+                    # if there already exist a segment at the new sequence start, keep the longer one, and don't update `prev_seq_end`
+                    self.buffer[prev_seq_end] = existing_segment if len(existing_segment) > len(trimmed_segment) else trimmed_segment
+                else:
+                    # insert trimmed segment at the new sequence start and update `prev_seq_end`
+                    self.buffer[prev_seq_end] = trimmed_segment
+                    prev_seq_end = prev_seq_end + len(trimmed_segment)
+            else:
+                # no overlap, just update `prev_seq_end`
+                prev_seq_end = cur_seq_start + len(self.buffer[cur_seq_start])
+                
+
 
     def get(self) -> tuple[bytes, int]:
-        pass
+        """
+        Retrieves the largest set of contiguous (with no "holes") bytes
+        that have been received, starting with `base_seq`, eliminating any duplicates.
+        Updates `base_seq` to the sequence number of the next segment expected.
+    
+        Returns:
+            A tuple of `(bytes, int)` where the first element is the data and the second 
+            is the sequence number of the starting sequence of bytes.
+        """
+        initial_base_seq = self.base_seq
+        prev_seq_end = self.base_seq
+        data = b''
+        # iterate the segments in sequence order
+        for cur_seq_start in sorted(self.buffer.keys()):
+            if prev_seq_end == cur_seq_start:
+                # add contiguous data and remove from buffer
+                data += self.buffer.pop(cur_seq_start)
+                prev_seq_end = self.base_seq + len(data)
+            else:
+                # there is a hole
+                break
+
+        # update base_seq
+        self.base_seq = prev_seq_end
+        return (data, initial_base_seq)
