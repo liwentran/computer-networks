@@ -1,3 +1,4 @@
+"""TCP Send and Receive Buffer"""
 class TCPSendBuffer(object):
     def __init__(self, seq: int):
         self.buffer = b''

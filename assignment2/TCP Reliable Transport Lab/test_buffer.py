@@ -1,3 +1,4 @@
+"""Unit Tests for TCP buffer"""
 import binascii
 import unittest
 

@@ -1,3 +1,4 @@
+"""Basic implementation of a host that has transport-layer capabilities."""
 from cougarnet.util import \
         ip_str_to_binary, ip_binary_to_str
 
