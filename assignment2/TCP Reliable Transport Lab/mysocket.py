@@ -159,7 +159,7 @@ class TCPSocket(TCPSocketBase):
         # The congestion window (cwnd), which represents the total number of
         # bytes that may be outstanding (unacknowledged) at one time
         self.cwnd = initial_cwnd
-        self.cwnd_inc = self.cwnd
+        self.cwnd_inc = 0
 
         self.congestion_control = congestion_control
 
@@ -399,6 +399,18 @@ class TCPSocket(TCPSocketBase):
                 self.retransmit()
                 # don't do anything with the timer
                 return
+            
+        # Adjust congestion window
+        if self.congestion_control == 'tahoe':
+            bytes_acked = tcp_hdr.ack - self.seq
+            if self.cwnd < self.ssthresh:
+                # slow start: increment cwnd by the number of new bytes received
+                self.set_cwnd(self.cwnd + self.cwnd_inc + bytes_acked)            
+            else:
+                # congestion avoidance (additive increase)
+                prev_cwd = self.cwnd + self.cwnd_inc
+                self.set_cwnd(prev_cwd + int(bytes_acked * self.mss / prev_cwd))
+            
         
         self.cancel_timer()
 
@@ -415,6 +427,10 @@ class TCPSocket(TCPSocketBase):
         """
         Grab the oldest unacknowledged segment from the buffer and retransmit it 
         """
+        # adjust congestion window
+        if self.congestion_control == 'tahoe':
+            self.multiplicative_decrease()
+            
         data, seq = self.send_buffer.get_for_resend(self.mss)
         if len(data):
             self.cancel_timer()
@@ -433,3 +449,13 @@ class TCPSocket(TCPSocketBase):
 
     def send_ack(self):
         self.send_packet(self.seq, self.ack, TCP_FLAGS_ACK)
+
+    def set_cwnd(self, cwnd: int) -> None:
+        """Sets the cwnd such that self.cwnd is always a multiple of self.mss and the remainder in self.cwnd_inc"""
+        self.cwnd = int(cwnd / self.mss) * self.mss
+        self.cwnd_inc = cwnd % self.mss
+
+    def multiplicative_decrease(self) -> None:
+        """When a loss event occurs, decrease ssthresh to half of cwnd (minimum of mss) and cwnd should be 1 mss."""
+        self.ssthresh = max(self.cwnd/2, self.mss) 
+        self.set_cwnd(self.mss)
