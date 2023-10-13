@@ -386,6 +386,19 @@ class TCPSocket(TCPSocketBase):
         # check acknowledgement number in the TCP header and slide the window
         tcp_hdr = TCPHeader.from_bytes(pkt[IP_HEADER_LEN:TCPIP_HEADER_LEN])
         self.send_buffer.slide(tcp_hdr.ack)
+
+        if self.fast_retransmit:
+            # track the number of duplicate ACKs. 
+            if self.seq == tcp_hdr.ack:
+                self.num_dup_acks += 1
+            else:
+                self.num_dup_acks = 0
+
+            if self.num_dup_acks == 3:
+                # ignore addutional acks
+                self.retransmit()
+                # don't do anything with the timer
+                return
         
         self.cancel_timer()
 
