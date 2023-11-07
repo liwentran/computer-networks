@@ -1,3 +1,4 @@
+"""TCP Socket."""
 from __future__ import annotations
 
 import asyncio
@@ -29,6 +30,7 @@ from headers import IPv4Header, UDPHeader, TCPHeader, \
 #From /usr/include/linux/in.h:
 IPPROTO_TCP = 6 # Transmission Control Protocol
 IPPROTO_UDP = 17 # User Datagram Protocol
+IPV4_TTL_DEFAULT = 64 # as instructed
 
 class UDPSocket:
     def __init__(self, local_addr: str, local_port: int,
@@ -157,7 +159,7 @@ class TCPSocket(TCPSocketBase):
         # The congestion window (cwnd), which represents the total number of
         # bytes that may be outstanding (unacknowledged) at one time
         self.cwnd = initial_cwnd
-        self.cwnd_inc = self.cwnd
+        self.cwnd_inc = 0
 
         self.congestion_control = congestion_control
 
@@ -266,11 +268,42 @@ class TCPSocket(TCPSocketBase):
     @classmethod
     def create_packet(cls, src: str, sport: int, dst: str, dport: int,
             seq: int, ack: int, flags: int, data: bytes=b'') -> bytes:
-        return b''
+        """Creates a TCP packet as a byte instance."""
+        ip_header = IPv4Header(
+            length=(TCPIP_HEADER_LEN+len(data)), 
+            ttl=IPV4_TTL_DEFAULT, 
+            protocol=IPPROTO_TCP, 
+            checksum=0, 
+            src=src, 
+            dst=dst
+        )
+
+        tcp_header = TCPHeader(
+            sport=sport, 
+            dport=dport, 
+            seq=seq,
+            ack=ack,
+            flags=flags,
+            checksum=0
+        )
+
+        return ip_header.to_bytes() + tcp_header.to_bytes() + data
 
     def send_packet(self, seq: int, ack: int, flags: int,
             data: bytes=b'') -> None:
-        pass
+        """Creates and sends a TCP packet"""
+        self._send_ip_packet(
+            self.create_packet(
+                src=self._local_addr,
+                sport=self._local_port,
+                dst=self._remote_addr,
+                dport=self._remote_port,
+                seq=seq,
+                ack=ack,
+                flags=flags,
+                data=data,
+            )
+        )
 
     def relative_seq_other(self, seq: int) -> int:
         '''
@@ -294,7 +327,18 @@ class TCPSocket(TCPSocketBase):
         return seq - self.base_seq_self
 
     def send_if_possible(self) -> int:
-        pass
+        """
+        Grabs segments of data from its TCPSendBuffer and sends them 
+        to the TCP peer.
+        """
+        # send segments of data until the number of outstanding bytes exceeds the congestion window.
+        while self.send_buffer.bytes_outstanding() < self.cwnd and self.send_buffer.bytes_not_yet_sent():
+            # Grab data from TCPSendBuffer
+            data, seq = self.send_buffer.get(self.mss)
+            self.send_packet(seq=seq, ack=self.ack, flags=0, data=data)
+            if not self.timer: 
+                # start timer if not already set
+                self.start_timer()
 
     def send(self, data: bytes) -> None:
         self.send_buffer.put(data)
@@ -306,13 +350,92 @@ class TCPSocket(TCPSocketBase):
         return data
 
     def handle_data(self, pkt: bytes) -> None:
-        pass
+        """
+        Extracts segment data and sequence number from TCP packet.
+
+        Args:
+            pkt : byte
+                an IP packet with IP header.
+        """
+        tcp_hdr = TCPHeader.from_bytes(pkt[IP_HEADER_LEN:TCPIP_HEADER_LEN])
+        data = pkt[TCPIP_HEADER_LEN:]
+
+        # put the longest contiguous set of bytes and store in ready buffer
+        self.receive_buffer.put(data, tcp_hdr.seq)
+        receive_data, receive_seq = self.receive_buffer.get()
+
+        # send ack with next expected in-order byte
+        self.ack = receive_seq + len(receive_data)
+        self.send_ack()
+
+        if len(receive_data):
+            # if new data was recieved, add to ready_buffer and notify application
+            self.ready_buffer += receive_data
+            self._notify_on_data()
+        
 
     def handle_ack(self, pkt: bytes) -> None:
-        pass
+        """
+        Bytes previously sent are acknowledgxed. Check the ack number
+        in the TCP header and acknowledge any new data by sliding the window.
+
+        Args:
+            pkt : bytes
+                an IP packet with IP header.
+        """
+        # check acknowledgement number in the TCP header and slide the window
+        tcp_hdr = TCPHeader.from_bytes(pkt[IP_HEADER_LEN:TCPIP_HEADER_LEN])
+        self.send_buffer.slide(tcp_hdr.ack)
+
+        if self.fast_retransmit:
+            # track the number of duplicate ACKs. 
+            if self.seq == tcp_hdr.ack:
+                self.num_dup_acks += 1
+            else:
+                self.num_dup_acks = 0
+
+            if self.num_dup_acks == 3:
+                # ignore addutional acks
+                self.retransmit()
+                # don't do anything with the timer
+                return
+            
+        # Adjust congestion window
+        if self.congestion_control == 'tahoe':
+            bytes_acked = tcp_hdr.ack - self.seq
+            if self.cwnd < self.ssthresh:
+                # slow start: increment cwnd by the number of new bytes received
+                self.set_cwnd(self.cwnd + self.cwnd_inc + bytes_acked)            
+            else:
+                # congestion avoidance (additive increase)
+                prev_cwd = self.cwnd + self.cwnd_inc
+                self.set_cwnd(prev_cwd + int(bytes_acked * self.mss / prev_cwd))
+            
+        
+        self.cancel_timer()
+
+        if self.send_buffer.bytes_outstanding():
+            # restart timer if we're still waiting for acks. 
+            if not self.timer: 
+                self.start_timer()
+
+        self.send_if_possible()
+        self.seq = tcp_hdr.ack # the byte the client is expecting
+                
 
     def retransmit(self) -> None:
-        pass
+        """
+        Grab the oldest unacknowledged segment from the buffer and retransmit it 
+        """
+        # adjust congestion window
+        if self.congestion_control == 'tahoe':
+            self.multiplicative_decrease()
+            
+        data, seq = self.send_buffer.get_for_resend(self.mss)
+        if len(data):
+            self.cancel_timer()
+            self.send_packet(seq=seq, ack=self.ack, flags=0, data=data)
+            self.start_timer()
 
     def start_timer(self) -> None:
         loop = asyncio.get_event_loop()
@@ -326,3 +449,13 @@ class TCPSocket(TCPSocketBase):
 
     def send_ack(self):
         self.send_packet(self.seq, self.ack, TCP_FLAGS_ACK)
+
+    def set_cwnd(self, cwnd: int) -> None:
+        """Sets the cwnd such that self.cwnd is always a multiple of self.mss and the remainder in self.cwnd_inc"""
+        self.cwnd = int(cwnd / self.mss) * self.mss
+        self.cwnd_inc = cwnd % self.mss
+
+    def multiplicative_decrease(self) -> None:
+        """When a loss event occurs, decrease ssthresh to half of cwnd (minimum of mss) and cwnd should be 1 mss."""
+        self.ssthresh = max(self.cwnd/2, self.mss) 
+        self.set_cwnd(self.mss)

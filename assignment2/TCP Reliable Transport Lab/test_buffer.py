@@ -1,3 +1,4 @@
+"""Unit Tests for TCP buffer"""
 import binascii
 import unittest
 
@@ -87,13 +88,48 @@ class TestBuffer(unittest.TestCase):
         self.assertEqual(buf.bytes_outstanding(), 7)
         self.assertEqual(buf.bytes_not_yet_sent(), 0)
 
+    def test_receive_buffer_put(self):
+        """Optional: additional tests"""
+        
+        # overlap no conflict
+        buf = TCPReceiveBuffer(2021)
+        buf.put(b'def', 2025)
+        buf.put(b'jk', 2031)
+        buf.put(b'fgh', 2027)
+        self.assertEqual(buf.buffer, {2025: b'def', 2031: b'jk', 2028: b'gh'})
+
+        # 2x overlap, not same start
+        buf = TCPReceiveBuffer(2021)
+        buf.put(b'def', 2025)
+        buf.put(b'jk', 2031)
+        buf.put(b'fghij', 2027)
+        self.assertEqual(buf.buffer, {2025: b'def', 2032: b'k', 2028: b'ghij'})
+
+
+        # 2x overlap, same start, keep new
+        buf = TCPReceiveBuffer(2021)
+        buf.put(b'def', 2025)
+        buf.put(b'ghij', 2028)
+        buf.put(b'fghijk', 2027)
+        self.assertEqual(buf.buffer, {2025: b'def', 2028: b'ghijk'})
+
+        # 2x overlap, same start, keep old
+        buf = TCPReceiveBuffer(2021)
+        buf.put(b'def', 2025)
+        buf.put(b'ghij', 2028)
+        buf.put(b'fghi', 2027)
+        self.assertEqual(buf.buffer, {2025: b'def',2028: b'ghij'})
 
     def test_receive_buffer(self):
         buf = TCPReceiveBuffer(2021)
 
         # put three chunks in buffer
         buf.put(b'fghi', 2026)
+        self.assertEqual(buf.buffer,
+                {2026: b'fghi'})
         buf.put(b'def', 2024)
+        self.assertEqual(buf.buffer,
+                {2024: b'def', 2027: b'ghi'})
         buf.put(b'mn', 2033)
         self.assertEqual(buf.buffer,
                 {2024: b'def', 2027: b'ghi', 2033: b'mn'})

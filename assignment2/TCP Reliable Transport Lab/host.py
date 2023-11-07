@@ -1,3 +1,4 @@
+"""Basic implementation of a host"""
 #!/usr/bin/python3
 
 import os

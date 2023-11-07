@@ -1,3 +1,4 @@
+"""Basic implementation of a host that has transport-layer capabilities."""
 from cougarnet.util import \
         ip_str_to_binary, ip_binary_to_str
 
@@ -6,6 +7,7 @@ from headers import IPv4Header, UDPHeader, TCPHeader, \
         TCPIP_HEADER_LEN, UDPIP_HEADER_LEN
 from host import Host
 from mysocket import UDPSocket, TCPSocketBase
+import struct
 
 class TransportHost(Host):
     def __init__(self, *args, **kwargs):
