@@ -178,3 +178,70 @@ Successful ping from `c` to `e`:
 
 We get the reponse, with rtt information. 
 
+# Part 2 - ICMP Error Messages and Fragmentation
+
+## Question 13
+Run the following to send an ICMP echo request/reply between `h1` and `h2`: 
+```
+h1$ ping -c 1 -W 1 10.0.1.2
+```
+**What is the TTL reported by `ping`? ** Considering that Linux, by default, uses a starting TTL of 64 for IP packets that it creates, how many hops (i.e., routers) did the ICMP echo response pass through?**
+
+The ttl reported was `59`. Since the TTL specifies the number of hops an IP packet can travel before it is discarded, this means that it passed through $64-59 = 5$ hops. 
+
+
+## Question 14
+**For each part of this problem, run the given command from `h1`, look at the Wireshark capture, and then respond with 1) the host or router that sent the ICMP error and 2) *brief* description of why the ICMP error was sent. For example, if the ICMP message is "port unreachable", do not write "port unreachable" but rather "the host was not listening on the requested port".**
+
+a. 
+```
+h1$ ping -c 1 -W 1 -t 3 10.0.1.2
+```
+(`-t` sets the starting TTL)
+
+We received the error that the `Time to live exceeded` from the IP address `10.0.0.6`, or `r3`, because the TTL was initially set to 3 and `r3` is the third hop and by then it would not have reached its desired destination. The number of hops required to pass through to go from host `h1` to `h2` is 5. 
+
+b.
+```
+h1$ ping -c 1 -W 1 10.0.1.2 
+```
+There was no ICMP error because there is a route to `10.0.1.2` and the TTL is sufficient. 
+
+c.
+```
+h1$ ping -c 1 -W 1 10.0.1.4
+```
+There is a `Destination unreachable (Host unreachable)` error sent by IP address `10.20.0.14`, or router `r5`. The packet is routed all the way up to `r5` from `r1` becuase that is the `default` path. However, at `r5` when the router is sends the packet to the interface `r5-h2`, it cannot find any host that matches `10.0.1.4`, which is why its destination unreachable. 
+
+d.
+```
+h1$ ping -c 1 -W 1 10.0.3.1
+```
+There is a `Destination unreachable (Network unreachable)` error sent by IP address `10.20.0.14`, or router `r5`. The packet is routed all the way up to `r5` from `r1` becuase that is the `default` path. However, at `r5` when the router looks through its routing table for the IP address `10.0.3.1`, it cannot find a match so it is dropped. This is why the error message is `Network unreachable` instead of `Host unrechable`.
+
+e.
+```
+h1$ dig @10.0.1.2 +timeout=1 +tries=1 . NS
+```
+(`dig` is a command-line DNS tool.  For the purposes of this , just know that it is sending a single UDP datagram to 10.0.1.2 on port 53--and also, there is nothing listening on port  on `h2`. :) )
+
+There is a `Destination unreachable (Port unreachable)` error sent by IP address `10.0.1.2`, or host `h2`. The packet is routed all the way up to `r5` from `r1` becuase that is the `default` path and then sent to `h2` since its IP address matchces. At `h2`, it attempts to access port 54, but there's nothing listening at `h2` so it sends this ICMP error to alert `h1`. 
+    
+## Question 15 
+Run the following command from `h1`, which, sends an ICMP echo request of size 1500 to 10.0.1.2:
+
+```
+h1$ ping -c 1 -W 1 -s 1500 -M dont 10.0.1.2
+```
+
+**a. How many fragments result from the single IP datagram?**
+
+There are 3 fragments in the single IP datagram.
+
+**b. What are the sizes of each fragment?**
+
+Each fragment has a length of `514`. 
+
+**c. What are the offsets of each fragment?**
+
+Fragment 1 has offset of 0, fragment 2 has offset of 480, and fragment 3 has offset of 960.
