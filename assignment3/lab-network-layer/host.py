@@ -13,6 +13,7 @@ from cougarnet.util import \
         ip_str_to_binary, ip_binary_to_str
 
 from forwarding_table import ForwardingTable
+from scapy.all import Ether, IP, ARP
 
 ETH_HDR_LEN = 14
 
@@ -30,143 +31,28 @@ IPPROTO_ICMP = 1 # Internet Control Message Protocol
 IPPROTO_TCP = 6 # Transmission Control Protocol
 IPPROTO_UDP = 17 # User Datagram Protocol
 
-class EthernetHeader:
-    def __init__(self, dmac: str, smac: str, ether_type: int):
-        """
-        Represents a Ethernet header.
-
-        Args:
-            dmac: str
-                destination MAC address
-            smac : int
-                source MAC address
-            ether_type : int
-                ethernet protocol types (hexnumber)
-        """
-        self.dmac = dmac.lower()
-        self.smac = smac.lower()
-        self.ether_type = ether_type
-
-    def __repr__(self) -> str:
-        return f'EthernetHeader(dmac={self.dmac}, smac={self.smac}, ether_type={self.ether_type})'
-
-    def __str__(self) -> str:
-        return repr(self)
-    
-    @classmethod
-    def from_bytes(cls, hdr: bytes):
-        """
-        Initialize a EthernetHeader from raw byte instance
-        """
-        dmac = mac_binary_to_str(hdr[:6])
-        smac = mac_binary_to_str(hdr[6:12])
-        ether_type, = struct.unpack('!H', hdr[12:14])
-
-        return cls(dmac, smac, ether_type)
-
-    def to_bytes(self) -> bytes:
-        """
-        Return bytes of this EthernetHeader instance with some defaults. 
-        """
-        return mac_str_to_binary(self.dmac) + mac_str_to_binary(self.smac) + struct.pack('!H', self.ether_type)
-
-class ARPPacket:
-    def __init__(self, 
-                 operation_code: int, 
-                 src_hw_addr: bytes, 
-                 src_protocol_addr: bytes, 
-                 dest_hw_addr: bytes, 
-                 dest_protocol_addr: bytes, 
-                 hw_type: int = ARPHRD_ETHER, 
-                 protocol_type: int = ETH_P_IP,
-                 hw_length: int = 6,
-                 protocol_length: int = 4,
-    ): 
-        """
-        Represents a ARP packet. Defaults to MAC and IP as hardware and protocol.
-
-        Args:
-            operation_code : int 
-                The operation or opcode will be a request (1) or reply (2). 
-            src_hw_addr : bytes
-                The source hardware address. Length must match the value of hardware address length.
-            src_protocol_addr : bytes
-                The source protcol address. Length must match the value of the protocol address length.
-            dest_hw_addr : bytes
-                The destination hardware address. Length must match the value of hardware address length.
-            dest_protocol_addr : bytes
-                The destination protcol address. Length must match the value of the protocol address length.
-            hw_type : int
-                The hardware type
-            protocol_type : int
-                The protocol type
-            hw_length : int
-                The hardware address length. Defaults to 6 because MAC addresses are always 6 bytes long.
-            protocol_length : int
-                The protocol address length. Defaults to 4 because IPv4 addresses are 4 bytes long.
-        """
-        assert len(src_hw_addr) == hw_length, f'Length of src_hw_addr={src_hw_addr} must match the value of the hardware address length ({hw_length})'
-        assert len(dest_hw_addr) == hw_length, f'Length of dest_hw_addr={dest_hw_addr} must match the value of the hardware address length ({hw_length})'
-        assert len(src_protocol_addr) == protocol_length, f'Length of src_protocol_addr={src_protocol_addr} must match the value of the protocol address length ({protocol_length})'
-        assert len(dest_protocol_addr) == protocol_length, f'Length of dest_protocol_addr={dest_protocol_addr} must match the value of the protocol address length ({protocol_length})'
-        
-
-        self.operation_code = operation_code
-        self.src_hw_addr = src_hw_addr
-        self.src_protocol_addr = src_protocol_addr
-        self.dest_hw_addr = dest_hw_addr
-        self.dest_protocol_addr = dest_protocol_addr
-        self.hw_type = hw_type
-        self.protocol_type = protocol_type
-        self.hw_length = hw_length
-        self.protocol_length = protocol_length
-
-    @classmethod
-    def from_bytes(cls, pkt: bytes):
-        """
-        Initialize a ARPPacket from raw byte instance.
-        """
-        hw_type, protocol_type, hw_length, protocol_length, operation_code = struct.unpack("!HHBBH", pkt[:8])
-        src_hw_addr = pkt[8:8+hw_length]
-        src_protocol_addr = pkt[8+hw_length:8+hw_length+protocol_length]
-        dest_hw_addr = pkt[8+hw_length+protocol_length:8+2*hw_length+protocol_length]
-        dest_protocol_addr = pkt[8+2*hw_length+protocol_length:8+2*hw_length+2*protocol_length]
-
-        return cls(
-            operation_code = operation_code,
-            src_hw_addr = src_hw_addr,
-            src_protocol_addr = src_protocol_addr,
-            dest_hw_addr = dest_hw_addr,
-            dest_protocol_addr = dest_protocol_addr,
-            hw_type = hw_type,
-            protocol_type = protocol_type,
-            hw_length = hw_length,
-            protocol_length = protocol_length,
-        )
-
-    def to_bytes(self) -> bytes:
-        """
-        Return bytes of this ARPPacket instance. 
-        """
-        return struct.pack(f"!HHBBH{self.hw_length}s{self.protocol_length}s{self.hw_length}s{self.protocol_length}s",
-                                 self.hw_type, self.protocol_type,
-                                 self.hw_length, self.protocol_length, self.operation_code,
-                                 self.src_hw_addr,
-                                 self.src_protocol_addr,
-                                 self.dest_hw_addr,
-                                 self.dest_protocol_addr,
-                            )
-
-    
 class Host(BaseHost):
     def __init__(self, ip_forward: bool):
-        super().__init__()
+        super(Host, self).__init__()
 
         self._ip_forward = ip_forward
+        self._arp_table = {}
+        self.pending = []
 
-        # Additional initializations
-        self.arp_table = {} # maps IP to MAC addresses
-        self.packet_queue = [] # IP packets to be sent
+        # TODO: Initialize self.fowarding_table
+        # self.forwarding_table =
+
+        # routes = json.loads(os.environ['COUGARNET_ROUTES'])
+
+        #TODO: Create a for loop to add entries into the forwarding table using prefix, intf, and next_hop
+        #for prefix, intf, next_hop in routes:
+
+        # for intf in self.physical_interfaces:
+        #     prefix = '%s/%d' % \
+        #             (self.int_to_info[intf].ipv4_addrs[0],
+        #                     self.int_to_info[intf].ipv4_prefix_len)
+        #     self.forwarding_table.add_entry(prefix, intf, None)
+
 
     def _handle_frame(self, frame: bytes, intf: str) -> None:
         """
@@ -178,22 +64,36 @@ class Host(BaseHost):
             intf : str
                 The interface on which it was received
         """
-        eth_hdr = EthernetHeader.from_bytes(frame[:ETH_HDR_LEN])
-        payload = frame[ETH_HDR_LEN:]
-
-        intf_mac_address = self.int_to_info[intf].mac_addr
+        eth = Ether(frame)
+        if eth.dst == 'ff:ff:ff:ff:ff:ff' or \
+                eth.dst == self.int_to_info[intf].mac_addr:
         # if the frame's MAC destination is this interface or a broadcast address, then process it
-        if (eth_hdr.dmac == intf_mac_address or eth_hdr.dmac == "ff:ff:ff:ff:ff:ff"):
-            if eth_hdr.ether_type == ETH_P_IP:
-                self.handle_ip(payload, intf)
-            elif eth_hdr.ether_type == ETH_P_ARP:
-                self.handle_arp(payload, intf)
-            # don't do anything if it is any other type
+            
+            if eth.type == ETH_P_IP:
+                self.handle_ip(bytes(eth.payload), intf)
+            elif eth.type == ETH_P_ARP:
+                self.handle_arp(bytes(eth.payload), intf)
         else:
             self.not_my_frame(frame, intf)
+        
 
     def handle_ip(self, pkt: bytes, intf: str) -> None:
-        pass
+        ip = IP(pkt)
+        all_addrs = []
+
+        # Parse out all destination IP address in the packet
+        for intf1 in self.int_to_info:
+            all_addrs += self.int_to_info[intf1].ipv4_addrs
+
+        # Determine if this host is the final destination for the packet, based on the destination IP address
+        if ip.dst == '255.255.255.255' or ip.dst in all_addrs:
+            # TODO: If the packet is destined for this host, based on the tests in the previous bullet, then call another method to handle the payload, depending on the protocol value in the IP header.
+            # Hint: For type TCP (IPPROTO_TCP = 6), call handle_tcp(), passing the full IP datagram, including header.
+            # Hint: For type UDP (IPPROTO_UDP = 17), call handle_udp(), passing the full IP datagram, including header. Note that if the protocol is something other than TCP or UDP, you can simply ignore it.
+            pass
+        else:
+            # TODO: If the destination IP address does not match any IP address on the system, and it is not the IP broadcast, then call not_my_packet(), passing it the full IP datagram and the interface on which it arrived.
+            pass
 
     def handle_tcp(self, pkt: bytes) -> None:
         pass
@@ -211,45 +111,42 @@ class Host(BaseHost):
             `intf : str
                 The interface on which it was received
         """
-        arp_pkt = ARPPacket.from_bytes(pkt)
-        self.handle_arp_request(pkt, intf) if arp_pkt.operation_code == ARPOP_REQUEST else self.handle_arp_response(pkt, intf)
+        arp = ARP(pkt)
+        # Determine whether the ARP packet is an ARP request or an ARP response (i.e., using the opcode field), 
+        # then call handle_arp_response() or handle_arp_request() accordingly. 
+        self.handle_arp_request(pkt, intf) if arp.op == ARPOP_REQUEST else self.handle_arp_response(pkt, intf)
 
     def handle_arp_response(self, pkt: bytes, intf: str) -> None:
-
-        arp_pkt = ARPPacket.from_bytes(pkt)
-                
+        pkt = ARP(pkt)
         # udpate ARP table with sender IP to sender MAC
-        self.arp_table[ip_binary_to_str(arp_pkt.src_protocol_addr)] = mac_binary_to_str(arp_pkt.src_hw_addr)
-
+        self._arp_table[pkt.psrc] = pkt.hwsrc
         # send all packets in queue whose next hop corresponds to the sender IP address in the response
-        packets_to_send = [p for p in self.packet_queue if p[2] == ip_binary_to_str(arp_pkt.src_protocol_addr)]
-        for packet, intf, next_hop in packets_to_send:
-            ethernet_frame = EthernetHeader(dmac=mac_binary_to_str(arp_pkt.src_hw_addr), smac=self.int_to_info[intf].mac_addr, ether_type=ETH_P_IP).to_bytes() + packet
-            self.send_frame(ethernet_frame, intf)
-
-        # remove from queue
-        self.packet_queue = [p for p in self.packet_queue if p[2] != ip_binary_to_str(arp_pkt.src_protocol_addr)]
-
+        for pkt1, next_hop1, intf1 in self.pending:
+            if next_hop1 == pkt.psrc and intf1 == intf:
+                eth = Ether(src=self.int_to_info[intf1].mac_addr, dst=self._arp_table[next_hop1], type=ETH_P_IP)
+                frame = eth / pkt1
+                self.send_frame(bytes(frame), intf1)
+                self.pending.remove((pkt1, next_hop1, intf1))
 
     def handle_arp_request(self, pkt: bytes, intf: str) -> None:
         """Update ARP table and send response if IP destination matches with intf IP."""
-        arp_pkt = ARPPacket.from_bytes(pkt)
-        
-        # udpate ARP table with sender IP to sender MAC
-        self.arp_table[ip_binary_to_str(arp_pkt.src_protocol_addr)] = mac_binary_to_str(arp_pkt.src_hw_addr)
-
-        # if the target IP matches the IP of `intf`, then create ARP response and Ethernet frame
-        if (ip_binary_to_str(arp_pkt.dest_protocol_addr) == self.int_to_info[intf].ipv4_addrs[0]):
+        pkt = ARP(pkt)
+        # if the target IP matches the IP of `intf`, then build and send an Ethernet frame containing the ARP response
+        if pkt.pdst == self.int_to_info[intf].ipv4_addrs[0]:
+            # udpate ARP table with sender IP to sender MAC
+            self._arp_table[pkt.psrc] = pkt.hwsrc
+            
             intf_mac_address = self.int_to_info[intf].mac_addr
-            response_pkt = ARPPacket(
-                operation_code=ARPOP_REPLY,
-                src_hw_addr=mac_str_to_binary(intf_mac_address),
-                src_protocol_addr=arp_pkt.dest_protocol_addr,
-                dest_hw_addr=arp_pkt.src_hw_addr,
-                dest_protocol_addr=arp_pkt.src_protocol_addr,
+            eth = Ether(src=intf_mac_address, dst=pkt.hwsrc, type=ETH_P_ARP)
+            arp=ARP(
+                op=ARPOP_REPLY,
+                hwsrc=intf_mac_address,
+                psrc=pkt.pdst,
+                hwdst=pkt.hwsrc,
+                pdst=pkt.psrc,
             )
-            eth_frame = EthernetHeader(dmac=mac_binary_to_str(arp_pkt.src_hw_addr), smac=intf_mac_address, ether_type=ETH_P_ARP).to_bytes() + response_pkt.to_bytes()
-            self.send_frame(eth_frame, intf)
+            frame = eth / arp
+            self.send_frame(bytes(frame), intf) 
 
     def send_packet_on_int(self, pkt: bytes, intf: str, next_hop: str) -> None:
         """
@@ -265,37 +162,58 @@ class Host(BaseHost):
                 as the host or the IP address of a router) for the packet. 
         """
         print(f'Attempting to send packet on {intf} with next hop {next_hop}:\n{repr(pkt)}')
-        
+ 	
         src_mac_addr = self.int_to_info[intf].mac_addr
-        # try to find the MAC address corresponding to `next_hop`
-        if (dmac := self.arp_table.get(next_hop)):
+
+        # check the host-wide ARP table to see if a mapping already exists
+        if (dmac := self._arp_table.get(next_hop)):
             # if host-wide ARP table has mapping, then build the ethernet frame and send it
-            ethernet_frame = EthernetHeader(dmac=dmac, smac=src_mac_addr, ether_type=ETH_P_IP).to_bytes() + pkt
-            self.send_frame(ethernet_frame, intf)
+            eth = Ether(src=src_mac_addr, dst=dmac, type=ETH_P_IP)
+            frame = eth / pkt
+            self.send_frame(bytes(frame), intf)
         else:
             # if no mapping exists, queue the packet for later sending, create ARP request, then build and send ethernet frame
-            self.packet_queue.append((pkt, intf, next_hop)) # will send the IP packet later
-            arp_pkt = ARPPacket(
-                operation_code=ARPOP_REQUEST,
-                src_hw_addr=mac_str_to_binary(src_mac_addr),
-                src_protocol_addr=ip_str_to_binary(self.int_to_info[intf].ipv4_addrs[0]),
-                dest_hw_addr=mac_str_to_binary("00:00:00:00:00:00"),
-                dest_protocol_addr=ip_str_to_binary(next_hop),
+            self.pending.append((pkt, intf, next_hop)) # will send the IP packet later
+            eth = Ether(src=src_mac_addr, dst="ff:ff:ff:ff:ff:ff", type=ETH_P_ARP)
+            arp=ARP(
+                op=ARPOP_REQUEST,
+                hwsrc=src_mac_addr,
+                psrc=self.int_to_info[intf].ipv4_addrs[0],
+                hwdst="00:00:00:00:00:00",
+                pdst=next_hop,
             )
-            ethernet_frame = EthernetHeader(dmac="ff:ff:ff:ff:ff:ff", smac=src_mac_addr, ether_type=ETH_P_ARP).to_bytes() + arp_pkt.to_bytes()
-            self.send_frame(ethernet_frame, intf)
+            frame = eth / arp
+            self.send_frame(bytes(frame), intf)
+            self.pending.append((pkt, next_hop, intf))
 
     def send_packet(self, pkt: bytes) -> None:
         print(f'Attempting to send packet:\n{repr(pkt)}')
+        ip = IP(pkt)
+        intf, next_hop = self.forwarding_table.get_entry(ip.dst)
+        if next_hop is None:
+            next_hop = ip.dst
+        if intf is None:
+            return
+        self.send_packet_on_int(pkt, intf, next_hop)
+
+
 
     def forward_packet(self, pkt: bytes) -> None:
-        pass
+        ip = IP(pkt)
+        ip.ttl -= 1
+        if ip.ttl <= 0:
+            return
+        self.send_packet(bytes(pkt))
 
     def not_my_frame(self, frame: bytes, intf: str) -> None:
         pass
 
     def not_my_packet(self, pkt: bytes, intf: str) -> None:
-        pass
+        #return #XXX
+        if self._ip_forward:
+            self.forward_packet(pkt)
+        else:
+            pass
 
 def main():
     parser = argparse.ArgumentParser()
@@ -304,7 +222,12 @@ def main():
             help='Act as a router by forwarding IP packets')
     args = parser.parse_args(sys.argv[1:])
 
-    Host(args.router).run()
+    with Host(args.router) as host:
+        loop = asyncio.get_event_loop()
+        try:
+            loop.run_forever()
+        finally:
+            loop.close()
 
 if __name__ == '__main__':
     main()
