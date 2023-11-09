@@ -6,6 +6,7 @@ import os
 import socket
 import sys
 import struct
+import json
 
 from cougarnet.sim.host import BaseHost
 from cougarnet.util import \
@@ -39,20 +40,19 @@ class Host(BaseHost):
         self._arp_table = {}
         self.pending = []
 
-        # TODO: Initialize self.fowarding_table
-        # self.forwarding_table =
+        self.forwarding_table = ForwardingTable()
 
-        # routes = json.loads(os.environ['COUGARNET_ROUTES'])
+        # add each entry in routes into the forwarding table using prefix, intf, and next_hop
+        routes = json.loads(os.environ['COUGARNET_ROUTES'])
+        for prefix, intf, next_hop in routes:
+            self.forwarding_table.add_entry(prefix, intf, next_hop)
 
-        #TODO: Create a for loop to add entries into the forwarding table using prefix, intf, and next_hop
-        #for prefix, intf, next_hop in routes:
-
-        # for intf in self.physical_interfaces:
-        #     prefix = '%s/%d' % \
-        #             (self.int_to_info[intf].ipv4_addrs[0],
-        #                     self.int_to_info[intf].ipv4_prefix_len)
-        #     self.forwarding_table.add_entry(prefix, intf, None)
-
+        # for each interface, add the ip prefix, the interface itself, and next_hop of none
+        for intf in self.physical_interfaces:
+            prefix = '%s/%d' % \
+                    (self.int_to_info[intf].ipv4_addrs[0],
+                            self.int_to_info[intf].ipv4_prefix_len)
+            self.forwarding_table.add_entry(prefix, intf, next_hop=None)
 
     def _handle_frame(self, frame: bytes, intf: str) -> None:
         """
@@ -78,6 +78,13 @@ class Host(BaseHost):
         
 
     def handle_ip(self, pkt: bytes, intf: str) -> None:
+        """
+        Determine what to do with an IP packet.
+
+        Args:
+            pkt: the IP packet received
+            intf: the interface on which it was received
+        """
         ip = IP(pkt)
         all_addrs = []
 
@@ -87,19 +94,23 @@ class Host(BaseHost):
 
         # Determine if this host is the final destination for the packet, based on the destination IP address
         if ip.dst == '255.255.255.255' or ip.dst in all_addrs:
-            # TODO: If the packet is destined for this host, based on the tests in the previous bullet, then call another method to handle the payload, depending on the protocol value in the IP header.
-            # Hint: For type TCP (IPPROTO_TCP = 6), call handle_tcp(), passing the full IP datagram, including header.
-            # Hint: For type UDP (IPPROTO_UDP = 17), call handle_udp(), passing the full IP datagram, including header. Note that if the protocol is something other than TCP or UDP, you can simply ignore it.
-            pass
+            #  If the packet is destined for this host, based on the tests in the previous bullet, then call another method to handle the payload, depending on the protocol value in the IP header.
+            if ip.proto == IPPROTO_TCP:
+                # For type TCP (IPPROTO_TCP = 6), call handle_tcp(), passing the full IP datagram, including header.
+                self.handle_tcp(pkt)
+            elif ip.proto == IPPROTO_UDP:
+                # For type UDP (IPPROTO_UDP = 17), call handle_udp(), passing the full IP datagram, including header. 
+                self.handle_udp(pkt)
+            # If the protocol is something other than TCP or UDP, ignore it.
         else:
-            # TODO: If the destination IP address does not match any IP address on the system, and it is not the IP broadcast, then call not_my_packet(), passing it the full IP datagram and the interface on which it arrived.
-            pass
+            # If the destination IP address does not match any IP address on the system, and it is not the IP broadcast, then call not_my_packet(), passing it the full IP datagram and the interface on which it arrived.
+            self.not_my_packet(pkt, intf)
 
     def handle_tcp(self, pkt: bytes) -> None:
-        pass
-
+        print('Handling TCP packet')
+        
     def handle_udp(self, pkt: bytes) -> None:
-        pass
+        print('Handling UDP packet')
 
     def handle_arp(self, pkt: bytes, intf: str) -> None:
         """
@@ -117,6 +128,7 @@ class Host(BaseHost):
         self.handle_arp_request(pkt, intf) if arp.op == ARPOP_REQUEST else self.handle_arp_response(pkt, intf)
 
     def handle_arp_response(self, pkt: bytes, intf: str) -> None:
+        """Handle the ARP response"""
         pkt = ARP(pkt)
         # udpate ARP table with sender IP to sender MAC
         self._arp_table[pkt.psrc] = pkt.hwsrc
@@ -187,21 +199,38 @@ class Host(BaseHost):
             self.pending.append((pkt, next_hop, intf))
 
     def send_packet(self, pkt: bytes) -> None:
+        """
+        Determine the the interface and next_hop from the destination
+        ip of the packet.
+
+        Args:
+            pkt: an IPv4 packet
+        """
         print(f'Attempting to send packet:\n{repr(pkt)}')
         ip = IP(pkt)
         intf, next_hop = self.forwarding_table.get_entry(ip.dst)
         if next_hop is None:
+            # the case for subnets to when the host is directly connected
             next_hop = ip.dst
         if intf is None:
+            # there is no matching route, so it should be dropped
+            # and an ICMP "network unreachable" will be returned.
             return
         self.send_packet_on_int(pkt, intf, next_hop)
 
 
 
     def forward_packet(self, pkt: bytes) -> None:
+        """
+        Decrease the TTL and send the send the packet if it is not expired
+
+        Args:
+            pkt: the IP packet received
+        """
         ip = IP(pkt)
         ip.ttl -= 1
         if ip.ttl <= 0:
+            # expired packets should not be forwarded
             return
         self.send_packet(bytes(pkt))
 
@@ -209,11 +238,15 @@ class Host(BaseHost):
         pass
 
     def not_my_packet(self, pkt: bytes, intf: str) -> None:
-        #return #XXX
+        """
+        Determine what to do with packet if its unrecognized
+
+        Args:
+            pkt: the IP packet received
+            intf: the interface on which it was received
+        """
         if self._ip_forward:
             self.forward_packet(pkt)
-        else:
-            pass
 
 def main():
     parser = argparse.ArgumentParser()
