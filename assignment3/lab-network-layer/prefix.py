@@ -1,35 +1,35 @@
 '''
 Test the Prefix.__contains__() method
 >>> '10.20.0.1' in Prefix('10.20.0.0/23')
-False
+True
 >>> '10.20.1.0' in Prefix('10.20.0.0/23')
-False
+True
 >>> '10.20.1.255' in Prefix('10.20.0.0/23')
-False
+True
 >>> '10.20.2.0' in Prefix('10.20.0.0/23')
 False
 >>> '10.20.0.1' in Prefix('10.20.0.0/24')
-False
+True
 >>> '10.20.0.255' in Prefix('10.20.0.0/24')
-False
+True
 >>> '10.20.1.0' in Prefix('10.20.0.0/24')
 False
 >>> '10.20.0.1' in Prefix('10.20.0.0/25')
-False
+True
 >>> '10.20.0.127' in Prefix('10.20.0.0/25')
-False
+True
 >>> '10.20.0.128' in Prefix('10.20.0.0/25')
 False
 >>> '10.20.0.1' in Prefix('10.20.0.0/26')
-False
+True
 >>> '10.20.0.63' in Prefix('10.20.0.0/26')
-False
+True
 >>> '10.20.0.64' in Prefix('10.20.0.0/26')
 False
 >>> '10.20.0.1' in Prefix('10.20.0.0/27')
-False
+True
 >>> '10.20.0.31' in Prefix('10.20.0.0/27')
-False
+True
 >>> '10.20.0.32' in Prefix('10.20.0.0/27')
 False
 '''
@@ -135,9 +135,20 @@ def ip_prefix_mask(family, prefix_len):
     >>> bin(ip_prefix_mask(socket.AF_INET6, 64))
     '0b11111111111111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000000'
     '''
+    if family == socket.AF_INET:
+        n_bits = 32
+    elif family == socket.AF_INET6:
+        n_bits = 128
+    else:
+        raise ValueError("Invalid family, must be either socket.AF_INET (IPv4) or socket.AF_INET6 (IPv6)")
+    
+    if prefix_len > n_bits or prefix_len < 0:
+        raise ValueError("Invalid prefix_len, must be less than the total number of bits and positive")
+    
+    mask = (1 << prefix_len) - 1 # create prefix_len number of 1's
+    mask <<= (n_bits - prefix_len) # shift until the length is 32 or 128
 
-    #FIXME
-    return 0
+    return mask
 
 def ip_prefix(address, family, prefix_len):
     '''Return the prefix for the given IP address, address family, and
@@ -167,9 +178,7 @@ def ip_prefix(address, family, prefix_len):
     >>> hex(ip_prefix(0x20010db80000ffffffffffffffffffff, socket.AF_INET6, 64))
     '0x20010db80000ffff0000000000000000'
     '''
-
-    #FIXME
-    return 0
+    return address & ip_prefix_mask(family, prefix_len)
 
 def ip_prefix_total_addresses(family, prefix_len):
     '''Return the total number IP addresses (_including_ the first and
@@ -191,10 +200,17 @@ def ip_prefix_total_addresses(family, prefix_len):
     >>> ip_prefix_total_addresses(socket.AF_INET6, 120)
     256
     '''
+    if family == socket.AF_INET:
+        n_bits = 32
+    elif family == socket.AF_INET6:
+        n_bits = 128
+    else:
+        raise ValueError("Invalid family, must be either socket.AF_INET (IPv4) or socket.AF_INET6 (IPv6)")
+    if prefix_len > n_bits or prefix_len < 0:
+        raise ValueError("Invalid prefix_len, must be less than the total number of bits and positive")
 
-    #FIXME
-    return 0
-
+    return 2**(n_bits - prefix_len)
+    
 def ip_prefix_nth_address(prefix, family, prefix_len, n):
     '''Return the nth IP address within the prefix specified with the given
     prefix, address family, and prefix length, as an int.  The prefix_len
@@ -224,9 +240,8 @@ def ip_prefix_nth_address(prefix, family, prefix_len, n):
     >>> hex(ip_prefix_nth_address(0x20010db80000ffff0000000000000000, socket.AF_INET6, 64, 0xff))
     '0x20010db80000ffff00000000000000ff'
     '''
-
-    #FIXME
-    return 0
+    return ip_prefix(prefix, family, prefix_len) + n
+    
 
 def ip_prefix_last_address(prefix, family, prefix_len):
     '''Return the last IP address within the prefix specified with the given
@@ -257,10 +272,15 @@ def ip_prefix_last_address(prefix, family, prefix_len):
     >>> hex(ip_prefix_last_address(0x20010db8000000000000000000000000, socket.AF_INET6, 64))
     '0x20010db800000000ffffffffffffffff'
     '''
-
-    #FIXME
-    return 0
-
+    if family == socket.AF_INET:
+        n_bits = 32
+    elif family == socket.AF_INET6:
+        n_bits = 128
+    else:
+        raise ValueError("Invalid family, must be either socket.AF_INET (IPv4) or socket.AF_INET6 (IPv6)")
+    if prefix_len > n_bits or prefix_len < 0:
+        raise ValueError("Invalid prefix_len, must be less than the total number of bits and positive")
+    return prefix | ((1 << n_bits - prefix_len) - 1)
 
 class Prefix:
     '''A class consisting of a prefix (int), a prefix length (int), and an
@@ -308,9 +328,7 @@ class Prefix:
                     'the same address family.')
 
         address = ip_str_to_int(address)
-
-        #FIXME
-        return False
+        return ip_prefix(address, family, self.prefix_len) == self.prefix
 
     def __hash__(self):
         return hash((self.prefix, self.prefix_len))
