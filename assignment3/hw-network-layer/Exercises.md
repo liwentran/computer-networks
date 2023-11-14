@@ -15,9 +15,9 @@ When you send a IP datagram from `a` to `b` (destination IP = `10.0.0.2`), it wi
 
 `10.0.1.2` does not match with `10.0.0.0/24`, so the packet will not be sent to `a-s1`. Because there are no other remainint entries in the forwarding table, the the device will send it to the default route. However, since no default route is specified, it is dropped. 
 
-**c. What are the current contents of a's ARP table?**
+**c. What are the current contents of `a`'s ARP table?**
 
-ARP's functionality is to translate IP addresses to physcial addresses. In the case of `a`, we should expect see its IP address (`10.0.0.1`) and a corresponding MAC address (`fe:41:41:0c:ab:f8`), which we find from running `ip addr 2> /dev/null` on host `a`.
+ARP's functionality is to translate IP addresses to physcial addresses. In the case of `a`, running `ip neigh` reveals the ARP table, and there is nothing. 
 
 ## Question 2
 The Wireshark window after `ping -c 1 -W 1 10.0.0.2` from host `a`.
@@ -41,7 +41,7 @@ Host `a` observed the response from `b`.
 
 **e. Briefly explain your answer to part d. That is, why did this set of hosts get the frame (no more, no less)?**
 
-The response first traversed the interface `s1-a`. Since host `b`'s response is intended to send to its target IP `10.0.0.1`, the interface `s1` would have found a match in its routing table to send on the link `s1-a`. Since this is the only host that matches this desired IP address, host `a` will be the only one that responds.
+Since host `b`'s response is intended to send to its target IP `10.0.0.1`, its routing table would have found a match and will forward it to the link `s1-a`. Since host `a` is the only host that matches this desired IP address, it will be the only one that observes the response.
 
 **f. Was the ping successful? That is, did you get a response?**
 
@@ -199,7 +199,7 @@ h1$ ping -c 1 -W 1 -t 3 10.0.1.2
 ```
 (`-t` sets the starting TTL)
 
-We received the error that the `Time to live exceeded` from the IP address `10.0.0.6`, or `r3`, because the TTL was initially set to 3 and `r3` is the third hop and by then it would not have reached its desired destination. The number of hops required to pass through to go from host `h1` to `h2` is 5. 
+We received the error that the `Time to live exceeded` from the IP address `10.20.0.6`, or `r3`, because the TTL was initially set to 3 and `r3` is the third hop and by then it would not have reached its desired destination. The number of hops required to pass through to go from host `h1` to `h2` is 5. 
 
 b.
 ```
@@ -244,4 +244,4 @@ Each fragment has a length of `514`.
 
 **c. What are the offsets of each fragment?**
 
-Fragment 1 has offset of 0, fragment 2 has offset of 480, and fragment 3 has offset of 960.
+Fragment 1 has offset of 0, fragment 2 has offset of 480, fragment 3 has offset of 960, and fragment 4 has offset of 1440.
