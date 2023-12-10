@@ -89,13 +89,17 @@ class Host(BaseHost):
         """
         ip = IP(pkt)
         all_addrs = []
+        all_bcast_addrs = []
 
-        # Parse out all destination IP address in the packet
         for intf1 in self.int_to_info:
+            # parse out all destination IP address in the packet
             all_addrs += self.int_to_info[intf1].ipv4_addrs
-
+            # find all the broadcast IPs:
+            if bcast_ip := self.bcast_for_int(intf=intf1):
+                all_bcast_addrs.append(bcast_ip)
+        
         # Determine if this host is the final destination for the packet, based on the destination IP address
-        if ip.dst == '255.255.255.255' or ip.dst in all_addrs:
+        if ip.dst == '255.255.255.255' or ip.dst in all_addrs or ip.dst in all_bcast_addrs:
             #  If the packet is destined for this host, based on the tests in the previous bullet, then call another method to handle the payload, depending on the protocol value in the IP header.
             if ip.proto == IPPROTO_TCP:
                 # For type TCP (IPPROTO_TCP = 6), call handle_tcp(), passing the full IP datagram, including header.
@@ -255,6 +259,9 @@ class Host(BaseHost):
 
     def bcast_for_int(self, intf: str) -> str:
         """Returns the broadcast IP for the subnet associated with a given interface"""
+        if not self.int_to_info[intf].ipv4_addrs:
+            # if the interface has no ipv4 addresses, then return an empty string
+            return ""
         ip_int = ip_str_to_int(self.int_to_info[intf].ipv4_addrs[0])
         ip_prefix_int = ip_prefix(ip_int, socket.AF_INET, self.int_to_info[intf].ipv4_prefix_len)
         ip_bcast_int = ip_prefix_last_address(ip_prefix_int, socket.AF_INET, self.int_to_info[intf].ipv4_prefix_len)
