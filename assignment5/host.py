@@ -16,6 +16,8 @@ from cougarnet.util import \
 from forwarding_table import ForwardingTable
 from scapy.all import Ether, IP, ARP
 
+from prefix import ip_str_to_int, ip_prefix, ip_prefix_last_address, ip_int_to_str
+
 ETH_HDR_LEN = 14
 
 # From /usr/include/linux/if_ether.h:
@@ -173,12 +175,15 @@ class Host(BaseHost):
                 The IP address of the next hop (IP destination if on the same subnet
                 as the host or the IP address of a router) for the packet. 
         """
-        print(f'Attempting to send packet on {intf} with next hop {next_hop}:\n{repr(pkt)}')
- 	
+        print(f'Attempting to send packet on {intf} with next hop {next_hop}:\n{repr(pkt)}') 	
         src_mac_addr = self.int_to_info[intf].mac_addr
-
-        # check the host-wide ARP table to see if a mapping already exists
-        if (dmac := self._arp_table.get(next_hop)):
+        
+        if (next_hop == self.bcast_for_int(intf=intf)):
+            # if destination IP address is the broadcast IP, then use broadcast MAC and send frame
+            eth = Ether(src=src_mac_addr, dst="ff:ff:ff:ff:ff:ff", type=ETH_P_IP)
+            frame = eth / pkt
+            self.send_frame(bytes(frame), intf)
+        elif (dmac := self._arp_table.get(next_hop)):
             # if host-wide ARP table has mapping, then build the ethernet frame and send it
             eth = Ether(src=src_mac_addr, dst=dmac, type=ETH_P_IP)
             frame = eth / pkt
@@ -247,6 +252,14 @@ class Host(BaseHost):
         """
         if self._ip_forward:
             self.forward_packet(pkt)
+
+    def bcast_for_int(self, intf: str) -> str:
+        """Returns the broadcast IP for the subnet associated with a given interface"""
+        ip_int = ip_str_to_int(self.int_to_info[intf].ipv4_addrs[0])
+        ip_prefix_int = ip_prefix(ip_int, socket.AF_INET, self.int_to_info[intf].ipv4_prefix_len)
+        ip_bcast_int = ip_prefix_last_address(ip_prefix_int, socket.AF_INET, self.int_to_info[intf].ipv4_prefix_len)
+        bcast = ip_int_to_str(ip_bcast_int, socket.AF_INET)
+        return bcast
 
 def main():
     parser = argparse.ArgumentParser()

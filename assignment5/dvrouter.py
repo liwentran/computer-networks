@@ -134,13 +134,6 @@ class DVRouter(TransportHost):
     def update_dv(self) -> None:
         pass
 
-    def bcast_for_int(self, intf: str) -> str:
-        ip_int = ip_str_to_int(self.int_to_info[intf].ipv4_addrs[0])
-        ip_prefix_int = ip_prefix(ip_int, socket.AF_INET, self.int_to_info[intf].ipv4_prefix_len)
-        ip_bcast_int = ip_prefix_last_address(ip_prefix_int, socket.AF_INET, self.int_to_info[intf].ipv4_prefix_len)
-        bcast = ip_int_to_str(ip_bcast_int, socket.AF_INET)
-        return bcast
-
     def send_dv(self) -> None:
         print('Sending DV')
 
