@@ -10,7 +10,7 @@ DV_PORT = 5016
 
 from cougarnet.sim.host import BaseHost
 
-from prefix import *
+import prefix
 from mysocket import UDPSocket
 from transporthost import TransportHost
 
@@ -176,9 +176,9 @@ class DVRouter(TransportHost):
         # get neighboring costs (1 for the purposes of this lab)
         neighbor_costs = {neighbor : 1 for neighbor in self.neighbor_dvs.keys()}
         
-        # initialize DV with distance 0 to own IP addresses
-        dv = dict([(intinfo.ipv4_addrs[0], 0) \
-                for intinfo in self.int_to_info.values() if intinfo.ipv4_addrs])
+        # initialize DV with distance 0 to its IP prefixes
+        dv = dict([(prefix.ip_int_to_str(prefix.ip_prefix(prefix.ip_str_to_int(intinfo.ipv4_addrs[0]), socket.AF_INET, intinfo.ipv4_prefix_len), socket.AF_INET)+'/'+str(intinfo.ipv4_prefix_len), 0) \
+                for intinfo in self.int_to_info.values() if intinfo.ipv4_addrs])        
 
         # bellman ford
         for neighbor_name, neighbor_dv in self.neighbor_dvs.items():
