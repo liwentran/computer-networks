@@ -136,7 +136,17 @@ control MyIngress(inout headers hdr,
           size: 1024
           default action: NoAction
     */
-
+    table next_hop {
+        key = {
+            hdr.ipv4.dstAddr: exact;
+        }
+        actions = {
+            set_nhop;
+            NoAction;
+        }
+        size = 1024;
+        default_action = NoAction();
+    }
 
     /* TODO: Create a table for setting dst ip and egress port.
        Hints: Use ipv4_lpm table as an example.
@@ -146,6 +156,17 @@ control MyIngress(inout headers hdr,
           size: 2
           default action: NoAction
     */
+    table dst_ip_egress_port {
+        key = {
+            meta.nhop: exact;
+        }
+        actions = {
+            set_ip_egress;
+            NoAction;
+        }
+        size = 2;
+        default_action = NoAction();
+    }
 
     /* Hints: Do not forget to add rules to s1-lb.json for both tables.
          Use the existing rules in s1-acl.json and s1-lb.json as examples.
@@ -154,7 +175,8 @@ control MyIngress(inout headers hdr,
     apply {
         if (hdr.ipv4.isValid() && hdr.ipv4.ttl > 0) {
             /* TODO: add your tables to the control flow */
-
+            next_hop.apply();
+            dst_ip_egress_port.apply();
         }
     }
 }

@@ -23,6 +23,39 @@
       "action_params": {
         "smac": "00:00:00:01:03:00"
       }
+    },
+    {
+      "table": "MyIngress.next_hop",
+      "match": {
+        "hdr.ipv4.dstAddr": "10.0.10.10"
+      },
+      "action_name": "MyIngress.set_nhop",
+      "action_params": {
+        "base": 0,
+        "count": 2
+      }
+    },
+    {
+      "table": "MyIngress.dst_ip_egress_port",
+      "match": {
+        "meta.nhop": 0
+      },
+      "action_name": "MyIngress.set_ip_egress",
+      "action_params": {
+          "ip": "10.0.2.2",
+          "port": 2
+      }
+    },
+    {
+      "table": "MyIngress.dst_ip_egress_port",
+      "match": {
+        "meta.nhop": 1
+      },
+      "action_name": "MyIngress.set_ip_egress",
+      "action_params": {
+          "ip": "10.0.3.3",
+          "port": 3
+      }
     }
   ]
 }
